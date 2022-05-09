@@ -30,12 +30,14 @@ parser.add_argument('--data_dir', default='data', help='data folder path [data]'
 parser.add_argument('--max_num', type=int,help='max number of points selected from the critical point set for clustering',default=16)
 parser.add_argument('--eps', type=float,default=0.2)
 parser.add_argument('--min_num', type=int,help='the min number for each cluster',default=3)
-
+#将参数实例化到FLAG
 FLAGS = parser.parse_args()
 
-
+#batchsize = 8
 BATCH_SIZE = FLAGS.batch_size
+#NUM_POINT = 1024
 NUM_POINT = FLAGS.num_point
+#NUM-CLUSTERS = 3
 NUM_CLUSTER = FLAGS.num_cluster
 MODEL_PATH = FLAGS.model_path
 CRIRICAL_PATH = FLAGS.critical_path
@@ -53,7 +55,9 @@ attacked_data_all=joblib.load(os.path.join(DATA_DIR,'attacked_data.z'))
 def main():
     is_training = False
     with tf.device('/gpu:'+str(GPU_INDEX)):
+        #为输入占位
         pointclouds_pl, labels_pl = MODEL.placeholder_inputs(BATCH_SIZE, NUM_POINT)
+        #为is_training占位
         is_training_pl = tf.placeholder(tf.bool, shape=())
 
         # simple model
@@ -62,16 +66,18 @@ def main():
         saver = tf.train.Saver(vl)
 
     # Create a session
-    config = tf.ConfigProto()
+    config = tf.ConfigProto() #参数配置
     config.gpu_options.allow_growth = True
     config.allow_soft_placement = True
     #config.log_device_placement = True
     sess = tf.Session(config=config)
     sess.run(tf.global_variables_initializer())
     # Restore variables from disk.
+    #重新存储模型？ 
     saver.restore(sess, MODEL_PATH)
     print("Model restored.")
 
+    #点的信息：点云的信息
     ops = {'pointclouds_pl': pointclouds_pl,
            'labels_pl': labels_pl,
            'is_training_pl': is_training_pl,
@@ -81,12 +87,18 @@ def main():
 
     }
 
-    for target in range(40):#40 is the number of classes
+    for target in range(40):#40 is the number of classes类的数量
+        #聚集的关键点的列表
         clustered_cri_list=[]
+        #得到每一个类别、每个批量下的关键点
         att_critical=get_critical_points_simple(sess,ops,attacked_data_all[target][:BATCH_SIZE])
         #joblib.dump(att_critical,os.path.join(BASE_DIR,CRIRICAL_PATH,'att_critical_{}.z' .format(target)))
+        #选择16个聚类点（最大值）
         att_critical=[x[-MAX_NUM:,:] for x in att_critical]#get the points for DBSCAN clustering
+        #np.concatenate: 完成多个att_critical的拼接，放在一个数组里
         cri_all=np.concatenate(att_critical,axis=0)
+        #eps：邻域之间的阈值。一个观察值到另一个观察值的最远距离
+        # min_samples：样本点要成为核心对象所需要的邻域的样本数阈值（最小的邻居数量）
         db = DBSCAN(eps=EPS, min_samples=MIN_NUM)
         result=db.fit_predict(cri_all)  # the cluster/class label of each point
         filter_idx=result > -0.5 #get the index of non-outlier point
